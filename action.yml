@@ -1,0 +1,342 @@
+name: 'Harness STO Security Scan'
+description: 'Run security scans using Harness Security Testing Orchestration (STO)'
+author: 'Harness'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  # Authentication
+  harness-token:
+    description: 'Harness Personal Access Token'
+    required: true
+
+  harness-domain:
+    description: 'Harness domain (e.g., https://app.harness.io)'
+    required: false
+    default: 'https://app.harness.io'
+
+  harness-org-id:
+    description: 'Harness Organization ID'
+    required: true
+
+  harness-project-id:
+    description: 'Harness Project ID'
+    required: true
+
+  # Scanner Configuration
+  scanner_name:
+    description: 'Scanner to use (bandit, snyk, sonarqube, trivy, etc.)'
+    required: true
+
+  scan-type:
+    description: 'Type of scan (repository, container, instance, configuration)'
+    required: false
+    default: 'repository'
+
+  # Repository Scan Options
+  workspace:
+    description: 'Path to code to scan (relative to GitHub workspace)'
+    required: false
+    default: '.'
+
+  # Container Scan Options
+  container-project:
+    description: 'Container project/repository name (for container scans)'
+    required: false
+
+  container-tag:
+    description: 'Container tag (for container scans)'
+    required: false
+
+  container-domain:
+    description: 'Container registry domain (for container scans)'
+    required: false
+
+  # Output Options
+  capture-output:
+    description: 'Capture scan output variables to file'
+    required: false
+    default: 'true'
+
+  output-file:
+    description: 'Path to write scan output variables (relative to workspace)'
+    required: false
+    default: 'scan-output.env'
+
+  fail-on-severity:
+    description: 'Fail build on this severity or higher (CRITICAL, HIGH, MEDIUM, LOW, NONE). Scanner will exit with error code if threshold is exceeded.'
+    required: false
+    default: 'NONE'
+
+  show-summary:
+    description: 'Display vulnerability summary in logs'
+    required: false
+    default: 'true'
+
+  # Advanced Options
+  docker-image-tag:
+    description: 'Tag for the scanner Docker image'
+    required: false
+    default: 'latest'
+
+  additional-env-vars:
+    description: 'Additional environment variables as JSON (e.g., {"VAR1":"value1","VAR2":"value2"})'
+    required: false
+    default: '{}'
+
+outputs:
+  scan-id:
+    description: 'Scan job ID'
+    value: ${{ steps.scan.outputs.scan-id }}
+
+  status:
+    description: 'Scan status (Succeeded/Failed)'
+    value: ${{ steps.scan.outputs.status }}
+
+  total-issues:
+    description: 'Total number of issues found'
+    value: ${{ steps.scan.outputs.total-issues }}
+
+  critical:
+    description: 'Number of CRITICAL issues'
+    value: ${{ steps.scan.outputs.critical }}
+
+  high:
+    description: 'Number of HIGH issues'
+    value: ${{ steps.scan.outputs.high }}
+
+  medium:
+    description: 'Number of MEDIUM issues'
+    value: ${{ steps.scan.outputs.medium }}
+
+  low:
+    description: 'Number of LOW issues'
+    value: ${{ steps.scan.outputs.low }}
+
+  output-file-path:
+    description: 'Full path to the output file'
+    value: ${{ steps.scan.outputs.output-file-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up scan configuration
+      shell: bash
+      id: config
+      run: |
+        # Map product name to Docker image name
+        # Based on STO plugin configuration: stoStepConfig.images
+        SCANNER="${{ inputs.scanner_name }}"
+
+        case "$SCANNER" in
+          anchore)
+            IMAGE_NAME="anchore-job-runner"
+            ;;
+          aquasecurity)
+            IMAGE_NAME="aqua-security-job-runner"
+            ;;
+          awsecr)
+            IMAGE_NAME="aws-ecr-job-runner"
+            ;;
+          awssecurityhub)
+            IMAGE_NAME="aws-security-hub-job-runner"
+            ;;
+          aquatrivy|trivy)
+            IMAGE_NAME="aqua-trivy-job-runner"
+            ;;
+          bandit)
+            IMAGE_NAME="bandit-job-runner"
+            ;;
+          blackduck)
+            IMAGE_NAME="blackduckhub-job-runner"
+            ;;
+          brakeman)
+            IMAGE_NAME="brakeman-job-runner"
+            ;;
+          burp)
+            IMAGE_NAME="burp-job-runner"
+            ;;
+          checkmarxone)
+            IMAGE_NAME="checkmarx-one-job-runner"
+            ;;
+          checkmarx)
+            IMAGE_NAME="checkmarx-job-runner"
+            ;;
+          checkov)
+            IMAGE_NAME="checkov-job-runner"
+            ;;
+          codeql|coverity|custom)
+            IMAGE_NAME="sto-plugin"
+            ;;
+          fossa)
+            IMAGE_NAME="fossa-job-runner"
+            ;;
+          githubadvancedsecurity)
+            IMAGE_NAME="github-advanced-security-job-runner"
+            ;;
+          gitleaks)
+            IMAGE_NAME="gitleaks-job-runner"
+            ;;
+          grype)
+            IMAGE_NAME="grype-job-runner"
+            ;;
+          harnesssast|harnesssca|shiftleft|qwiet)
+            IMAGE_NAME="shiftleft-job-runner"
+            ;;
+          mend|whitesource)
+            IMAGE_NAME="whitesource-agent-job-runner"
+            ;;
+          metasploit)
+            IMAGE_NAME="sto-plugin"
+            ;;
+          modelscan)
+            IMAGE_NAME="modelscan-job-runner"
+            ;;
+          nexusiq)
+            IMAGE_NAME="nexusiq-job-runner"
+            ;;
+          nikto)
+            IMAGE_NAME="nikto-job-runner"
+            ;;
+          nmap)
+            IMAGE_NAME="nmap-job-runner"
+            ;;
+          osv)
+            IMAGE_NAME="osv-job-runner"
+            ;;
+          owasp)
+            IMAGE_NAME="owasp-dependency-check-job-runner"
+            ;;
+          prismacloud|twistlock)
+            IMAGE_NAME="twistlock-job-runner"
+            ;;
+          prowler)
+            IMAGE_NAME="prowler-job-runner"
+            ;;
+          semgrep)
+            IMAGE_NAME="semgrep-job-runner"
+            ;;
+          snyk)
+            IMAGE_NAME="snyk-job-runner"
+            ;;
+          sonarqube)
+            IMAGE_NAME="sonarqube-agent-job-runner"
+            ;;
+          sysdig)
+            IMAGE_NAME="sysdig-job-runner"
+            ;;
+          traceable)
+            IMAGE_NAME="traceable-job-runner"
+            ;;
+          veracode)
+            IMAGE_NAME="veracode-agent-job-runner"
+            ;;
+          wiz)
+            IMAGE_NAME="wiz-job-runner"
+            ;;
+          zap|owaspzap)
+            IMAGE_NAME="zap-job-runner"
+            ;;
+          *)
+            # Default: assume scanner name matches image name
+            IMAGE_NAME="${SCANNER}-job-runner"
+            ;;
+        esac
+
+        SCANNER_IMAGE="harness/${IMAGE_NAME}:${{ inputs.docker-image-tag }}"
+        echo "scanner-image=$SCANNER_IMAGE" >> $GITHUB_OUTPUT
+        echo "Using Docker image: $SCANNER_IMAGE"
+
+        # Set workspace path
+        if [ "${{ inputs.scan-type }}" = "repository" ]; then
+          WORKSPACE_PATH="${{ github.workspace }}/${{ inputs.workspace }}"
+          echo "workspace-path=$WORKSPACE_PATH" >> $GITHUB_OUTPUT
+        fi
+
+        # Set output file path
+        if [ "${{ inputs.capture-output }}" = "true" ]; then
+          OUTPUT_PATH="${{ github.workspace }}/${{ inputs.output-file }}"
+          echo "output-path=$OUTPUT_PATH" >> $GITHUB_OUTPUT
+          echo "container-output-path=/harness-output/${{ inputs.output-file }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run STO Scan
+      shell: bash
+      id: scan
+      run: |
+        # Build Docker command
+        DOCKER_CMD="docker run --rm"
+
+        # Add volume mounts
+        if [ "${{ inputs.scan-type }}" = "repository" ]; then
+          DOCKER_CMD="$DOCKER_CMD -v ${{ steps.config.outputs.workspace-path }}:/harness"
+        fi
+
+        if [ "${{ inputs.capture-output }}" = "true" ]; then
+          DOCKER_CMD="$DOCKER_CMD -v ${{ github.workspace }}:/harness-output"
+        fi
+
+        # Add standard environment variables
+        DOCKER_CMD="$DOCKER_CMD -e HARNESS_DOMAIN=${{ inputs.harness-domain }}"
+        DOCKER_CMD="$DOCKER_CMD -e HARNESS_TOKEN=${{ inputs.harness-token }}"
+        DOCKER_CMD="$DOCKER_CMD -e HARNESS_ORG_ID=${{ inputs.harness-org-id }}"
+        DOCKER_CMD="$DOCKER_CMD -e HARNESS_PROJECT_ID=${{ inputs.harness-project-id }}"
+        DOCKER_CMD="$DOCKER_CMD -e SCAN_TYPE=${{ inputs.scan-type }}"
+
+        # Map fail-on-severity input to fail_on_severity env var (scanner handles this)
+        FAIL_ON_SEVERITY="${{ inputs.fail-on-severity }}"
+        if [ "$FAIL_ON_SEVERITY" = "NONE" ]; then
+          FAIL_ON_SEVERITY="0"
+        fi
+        DOCKER_CMD="$DOCKER_CMD -e fail_on_severity=$FAIL_ON_SEVERITY"
+
+        # Add output file if enabled
+        if [ "${{ inputs.capture-output }}" = "true" ]; then
+          DOCKER_CMD="$DOCKER_CMD -e SUMMARY_OUTPUT_PATH=${{ steps.config.outputs.container-output-path }}"
+        fi
+
+        # Add container-specific variables
+        if [ "${{ inputs.scan-type }}" = "container" ]; then
+          [ -n "${{ inputs.container-project }}" ] && DOCKER_CMD="$DOCKER_CMD -e CONTAINER_PROJECT=${{ inputs.container-project }}"
+          [ -n "${{ inputs.container-tag }}" ] && DOCKER_CMD="$DOCKER_CMD -e CONTAINER_TAG=${{ inputs.container-tag }}"
+          [ -n "${{ inputs.container-domain }}" ] && DOCKER_CMD="$DOCKER_CMD -e CONTAINER_DOMAIN=${{ inputs.container-domain }}"
+        fi
+
+        # Add custom environment variables from JSON
+        if [ "${{ inputs.additional-env-vars }}" != "{}" ]; then
+          echo '${{ inputs.additional-env-vars }}' | jq -r 'to_entries | .[] | "-e \(.key)=\(.value)"' | while read -r env_var; do
+            DOCKER_CMD="$DOCKER_CMD $env_var"
+          done
+        fi
+
+        # Add Docker image
+        DOCKER_CMD="$DOCKER_CMD ${{ steps.config.outputs.scanner-image }}"
+
+        # Run the scan
+        echo "Running: $DOCKER_CMD"
+        eval $DOCKER_CMD
+
+        # Parse output file if it exists
+        if [ "${{ inputs.capture-output }}" = "true" ] && [ -f "${{ steps.config.outputs.output-path }}" ]; then
+          # Extract values
+          SCAN_ID=$(grep "^JOB_ID=" "${{ steps.config.outputs.output-path }}" | cut -d= -f2)
+          STATUS=$(grep "^STATUS=" "${{ steps.config.outputs.output-path }}" | cut -d= -f2)
+          TOTAL=$(grep "^ISSUES_COUNT=" "${{ steps.config.outputs.output-path }}" | cut -d= -f2)
+          CRITICAL=$(grep "^CRITICAL=" "${{ steps.config.outputs.output-path }}" | cut -d= -f2)
+          HIGH=$(grep "^HIGH=" "${{ steps.config.outputs.output-path }}" | cut -d= -f2)
+          MEDIUM=$(grep "^MEDIUM=" "${{ steps.config.outputs.output-path }}" | cut -d= -f2)
+          LOW=$(grep "^LOW=" "${{ steps.config.outputs.output-path }}" | cut -d= -f2)
+
+          # Set outputs
+          echo "scan-id=$SCAN_ID" >> $GITHUB_OUTPUT
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "total-issues=$TOTAL" >> $GITHUB_OUTPUT
+          echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+          echo "high=$HIGH" >> $GITHUB_OUTPUT
+          echo "medium=$MEDIUM" >> $GITHUB_OUTPUT
+          echo "low=$LOW" >> $GITHUB_OUTPUT
+          echo "output-file-path=${{ steps.config.outputs.output-path }}" >> $GITHUB_OUTPUT
+        fi
+
