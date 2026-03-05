@@ -13,7 +13,7 @@ inputs:
     required: true
 
   harness-domain:
-    description: 'Harness domain (e.g., https://app.harness.io)'
+    description: 'Harness domain (e.g., https://app.harness.io or https://qa.harness.io)'
     required: false
     default: 'https://app.harness.io'
 
@@ -285,6 +285,17 @@ runs:
         DOCKER_CMD="$DOCKER_CMD -e HARNESS_PROJECT_ID=${{ inputs.harness-project-id }}"
         DOCKER_CMD="$DOCKER_CMD -e SCAN_TYPE=${{ inputs.scan-type }}"
 
+        # Auto-populate target metadata from GitHub Actions context (for repository scans)
+        if [ "${{ inputs.scan-type }}" = "repository" ]; then
+          # Map GitHub Actions env vars to STO plugin target fields
+          if [ -n "${{ github.repository }}" ]; then
+            DOCKER_CMD="$DOCKER_CMD -e target_name=${{ github.repository }}"
+          fi
+          if [ -n "${{ github.ref_name }}" ]; then
+            DOCKER_CMD="$DOCKER_CMD -e target_variant=${{ github.ref_name }}"
+          fi
+        fi
+
         # Map fail-on-severity input to fail_on_severity env var (scanner handles this)
         FAIL_ON_SEVERITY="${{ inputs.fail-on-severity }}"
         if [ "$FAIL_ON_SEVERITY" = "NONE" ]; then
@@ -340,3 +351,22 @@ runs:
           echo "output-file-path=${{ steps.config.outputs.output-path }}" >> $GITHUB_OUTPUT
         fi
 
+    - name: Display Scan Summary
+      shell: bash
+      if: inputs.show-summary == 'true' && inputs.capture-output == 'true'
+      run: |
+        if [ -f "${{ steps.config.outputs.output-path }}" ]; then
+          echo "============================================================"
+          echo "HARNESS STO SCAN RESULTS"
+          echo "============================================================"
+          cat "${{ steps.config.outputs.output-path }}"
+          echo "============================================================"
+          echo ""
+          echo "Vulnerability Summary:"
+          echo "  CRITICAL: ${{ steps.scan.outputs.critical }}"
+          echo "  HIGH: ${{ steps.scan.outputs.high }}"
+          echo "  MEDIUM: ${{ steps.scan.outputs.medium }}"
+          echo "  LOW: ${{ steps.scan.outputs.low }}"
+          echo "  TOTAL: ${{ steps.scan.outputs.total-issues }}"
+          echo "============================================================"
+        fi
