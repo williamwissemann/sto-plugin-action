@@ -278,8 +278,16 @@ runs:
           DOCKER_CMD="$DOCKER_CMD -v ${{ github.workspace }}:/harness-output"
         fi
 
-        # Add standard environment variables
-        DOCKER_CMD="$DOCKER_CMD -e HARNESS_DOMAIN=${{ inputs.harness-domain }}"
+        # Add standard environment variables with defaults
+        HARNESS_DOMAIN="${{ inputs.harness-domain }}"
+        if [ -z "$HARNESS_DOMAIN" ]; then
+          HARNESS_DOMAIN="https://app.harness.io"
+          echo "Using default Harness domain: $HARNESS_DOMAIN"
+        else
+          echo "Using provided Harness domain: $HARNESS_DOMAIN"
+        fi
+
+        DOCKER_CMD="$DOCKER_CMD -e HARNESS_DOMAIN=$HARNESS_DOMAIN"
         DOCKER_CMD="$DOCKER_CMD -e HARNESS_TOKEN=${{ inputs.harness-token }}"
         DOCKER_CMD="$DOCKER_CMD -e HARNESS_ORG_ID=${{ inputs.harness-org-id }}"
         DOCKER_CMD="$DOCKER_CMD -e HARNESS_PROJECT_ID=${{ inputs.harness-project-id }}"
